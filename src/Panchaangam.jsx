@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { detectEclipse, riseTransFixed } from '@/lib/eclipseHelpers';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Stars, Html, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
@@ -77,7 +78,21 @@ const UI_STRINGS = {
         year: "yr",
         adhika: "Adhika",
         solarEclipse: "Solar Eclipse (Surya Grahana)",
-        lunarEclipse: "Lunar Eclipse (Chandra Grahana)"
+        lunarEclipse: "Lunar Eclipse (Chandra Grahana)",
+        eclipseTotal: "Total",
+        eclipsePartial: "Partial",
+        eclipseAnnular: "Annular",
+        eclipsePenumbral: "Penumbral",
+        eclipseHybrid: "Hybrid",
+        eclipseMagnitude: "Magnitude",
+        eclipseObscuration: "Obscuration",
+        eclipseMaximum: "Maximum",
+        eclipseBegin: "Begin",
+        eclipseEnd: "End",
+        eclipseTotality: "Totality",
+        eclipseDuration: "Duration",
+        eclipseActive: "Active",
+        eclipseGrahana: "Grahana"
     },
     te: {
         title: "పంచాంగం",
@@ -136,7 +151,21 @@ const UI_STRINGS = {
         year: "సంవత్సరం",
         adhika: "అధిక ",
         solarEclipse: "సూర్య గ్రహణం",
-        lunarEclipse: "చంద్ర గ్రహణం"
+        lunarEclipse: "చంద్ర గ్రహణం",
+        eclipseTotal: "సంపూర్ణ",
+        eclipsePartial: "పాక్షిక",
+        eclipseAnnular: "వలయాకార",
+        eclipsePenumbral: "ఛాయా",
+        eclipseHybrid: "సంకర",
+        eclipseMagnitude: "తీవ్రత",
+        eclipseObscuration: "ఆవరణ",
+        eclipseMaximum: "గరిష్ఠం",
+        eclipseBegin: "ప్రారంభం",
+        eclipseEnd: "ముగింపు",
+        eclipseTotality: "సంపూర్ణత",
+        eclipseDuration: "వ్యవధి",
+        eclipseActive: "క్రియాశీలం",
+        eclipseGrahana: "గ్రహణం"
     }
 };
 
@@ -1083,15 +1112,16 @@ function SolarSystem({ speed, paused, anchorJD, location, onUpdate, sweReady, ta
 
             try {
                 const geopos = [location.lon, location.lat, location.alt];
-                // Sunrise/Sunset - Use SE_CALC_RISE/SET (0/1) for standard disk center (top is default with refraction)
-                const riseRes = swe.rise_trans(simJD, swe.SE_SUN, "", swe.SEFLG_SWIEPH, swe.SE_CALC_RISE, geopos, 1013.25, 15);
-                if (riseRes && riseRes.tret) {
-                    sunrise = formatInTz(riseRes.tret[0], location.timezone, false, simJD);
+                // Sunrise — use fixed wrapper with proper C API pointer signatures
+                const riseJD = riseTransFixed(swe, simJD, swe.SE_SUN, swe.SEFLG_SWIEPH, 1, geopos, 1013.25, 15);
+                if (riseJD) {
+                    sunrise = formatInTz(riseJD, location.timezone, false, simJD);
                 }
 
-                const setRes = swe.rise_trans(simJD, swe.SE_SUN, "", swe.SEFLG_SWIEPH, swe.SE_CALC_SET, geopos, 1013.25, 15);
-                if (setRes && setRes.tret) {
-                    sunset = formatInTz(setRes.tret[0], location.timezone, false, simJD);
+                // Sunset
+                const setJD = riseTransFixed(swe, simJD, swe.SE_SUN, swe.SEFLG_SWIEPH, 2, geopos, 1013.25, 15);
+                if (setJD) {
+                    sunset = formatInTz(setJD, location.timezone, false, simJD);
                 }
 
                 epheCache.current = { day: simDateFloor, sunrise, sunset, location: { ...location } };
@@ -1140,14 +1170,13 @@ function SolarSystem({ speed, paused, anchorJD, location, onUpdate, sweReady, ta
             yogaUntil,
             karanaUntil,
             eclipse: (() => {
-                // Persistent Day-wide Eclipse Detection
+                // Persistent Day-wide Eclipse Detection (NASA/ISRO precision)
                 try {
                     const simDate = fromJD(simJD);
                     const y = simDate.getUTCFullYear();
                     const m = simDate.getUTCMonth();
                     const d = simDate.getUTCDate();
 
-                    // Approximate anchor for the "simulation day" in UTC to stabilize cache
                     const simDayKey = `${y}-${m + 1}-${d}`;
                     const cacheKey = `${simDayKey}-${location.lat.toFixed(1)}-${location.lon.toFixed(1)}`;
 
@@ -1155,39 +1184,9 @@ function SolarSystem({ speed, paused, anchorJD, location, onUpdate, sweReady, ta
                         return epheCache.current.eclipseData;
                     }
 
-                    const searchJD = Math.floor(simJD);
-                    const geopos = [location.lon, location.lat, location.alt];
-                    let eclipseData = null;
-
-                    // 1. Solar Eclipse search
-                    const sWhen = swe.sol_eclipse_when_loc(searchJD - 0.5, flags, geopos, 0);
-                    if (sWhen && sWhen.tret) {
-                        const maxJD = sWhen.tret[0];
-                        if (Math.abs(maxJD - simJD) < 1.0) {
-                            const res = swe.sol_eclipse_how(maxJD, flags, geopos);
-                            if (res && res.attr && res.attr[0] > 0) {
-                                const s = formatInTz(sWhen.tret[1], location.timezone, false, simJD);
-                                const e = formatInTz(sWhen.tret[2], location.timezone, false, simJD);
-                                eclipseData = { name: ui.solarEclipse, times: `${s} - ${e}` };
-                            }
-                        }
-                    }
-
-                    // 2. Lunar Eclipse search (if no solar)
-                    if (!eclipseData) {
-                        const lWhen = swe.lun_eclipse_when_loc(searchJD - 0.5, flags, geopos, 0);
-                        if (lWhen && lWhen.tret) {
-                            const maxJD = lWhen.tret[0];
-                            if (Math.abs(maxJD - simJD) < 1.0) {
-                                const res = swe.lun_eclipse_how(maxJD, flags, geopos);
-                                if (res && res.attr && (res.attr[0] > 0 || res.attr[1] > 0)) {
-                                    const s = formatInTz(lWhen.tret[1], location.timezone, false, simJD);
-                                    const e = formatInTz(lWhen.tret[2], location.timezone, false, simJD);
-                                    eclipseData = { name: ui.lunarEclipse, times: `${s} - ${e}` };
-                                }
-                            }
-                        }
-                    }
+                    // Use corrected WASM-level eclipse detection
+                    const formatTimeFn = (jd) => formatInTz(jd, location.timezone, false, simJD);
+                    const eclipseData = detectEclipse(swe, simJD, flags, location, ui, formatTimeFn);
 
                     epheCache.current.eclipseKey = cacheKey;
                     epheCache.current.eclipseData = eclipseData;
@@ -1462,13 +1461,18 @@ function SolarSystem({ speed, paused, anchorJD, location, onUpdate, sweReady, ta
             {/* Eclipse Indicator */}
             {ui.eclipse && (
                 <Html position={[0, 5, 0]} center zIndexRange={[1000, 0]}>
-                    <div className="flex flex-col items-center animate-pulse">
-                        <div className="text-red-500 font-bold text-lg tracking-[0.2em] uppercase drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]">
-                            {ui.eclipse.name}
+                    <div className="flex flex-col items-center" style={{ animation: 'pulse 2s cubic-bezier(0.4,0,0.6,1) infinite' }}>
+                        <div className={`font-bold text-lg tracking-[0.2em] uppercase ${ui.eclipse.type === 'SOLAR' ? 'text-amber-400 drop-shadow-[0_0_10px_rgba(245,158,11,0.8)]' : 'text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]'}`}>
+                            {ui.eclipse.type === 'SOLAR' ? '🌑' : '🌕'} {ui.eclipse.name}
                         </div>
-                        <div className="text-red-400/80 text-xs font-mono uppercase tracking-widest mt-1">
-                            {ui.eclipse.partial ? "Partial" : "Total"} Active
+                        <div className={`text-xs font-mono uppercase tracking-widest mt-1 ${ui.eclipse.type === 'SOLAR' ? 'text-amber-300/80' : 'text-red-400/80'}`}>
+                            {ui.eclipse.classification} • {ui.eclipse.eclipseActive || 'Active'}
                         </div>
+                        {ui.eclipse.magnitude > 0 && (
+                            <div className="text-[10px] font-mono text-white/60 mt-0.5 tracking-wider">
+                                MAG {ui.eclipse.magnitude.toFixed(4)}
+                            </div>
+                        )}
                     </div>
                 </Html>
             )}
@@ -1672,22 +1676,58 @@ const DataBox = ({ label, value, until, color, help, ui, eclipse }) => (
                 )}
             </div>
             <div className={`text-lg tracking-tight leading-none uppercase ${color}`}>{value}</div>
-            {/* Eclipse Note - High Visibility */}
-            {eclipse && label === ui?.tithi && (
-                <div className="mt-2.5 p-2 bg-red-500/10 border border-red-500/30 rounded-lg animate-pulse">
-                    <div className="flex items-center gap-2 mb-1">
-                        <div className="w-2 h-2 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
-                        <span className="text-[10px] text-red-400 font-bold uppercase tracking-[0.2em] leading-none">
-                            {eclipse.name}
-                        </span>
-                    </div>
-                    {eclipse.times && (
-                        <div className="text-[11px] text-white/90 font-mono tracking-tighter ml-4 border-l border-white/10 pl-2 py-0.5">
-                            {eclipse.times}
+            {/* Eclipse Note - High Visibility (NASA/ISRO Grade) */}
+            {eclipse && label === ui?.tithi && (() => {
+                const isSolar = eclipse.type === 'SOLAR';
+                const accentColor = isSolar ? 'amber' : 'red';
+                const bgClass = isSolar ? 'bg-amber-500/10 border-amber-500/30' : 'bg-red-500/10 border-red-500/30';
+                const dotClass = isSolar ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]';
+                const textClass = isSolar ? 'text-amber-400' : 'text-red-400';
+                const badgeBg = isSolar ? 'bg-amber-500/20 border-amber-500/40 text-amber-300' : 'bg-red-500/20 border-red-500/40 text-red-300';
+
+                return (
+                    <div className={`mt-2.5 p-2.5 ${bgClass} border rounded-lg`} style={{ animation: 'pulse 3s cubic-bezier(0.4,0,0.6,1) infinite' }}>
+                        <div className="flex items-center gap-2 mb-1.5">
+                            <div className={`w-2 h-2 rounded-full ${dotClass}`} />
+                            <span className={`text-[10px] ${textClass} font-bold uppercase tracking-[0.2em] leading-none`}>
+                                {isSolar ? '🌑' : '🌕'} {eclipse.name}
+                            </span>
+                            {eclipse.classification && (
+                                <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${badgeBg}`}>
+                                    {eclipse.classification}
+                                </span>
+                            )}
                         </div>
-                    )}
-                </div>
-            )}
+                        {eclipse.times && (
+                            <div className="text-[11px] text-white/90 font-mono tracking-tighter ml-4 border-l border-white/10 pl-2 py-0.5">
+                                {eclipse.times}
+                            </div>
+                        )}
+                        {(eclipse.magnitude > 0 || eclipse.obscuration > 0) && (
+                            <div className="flex gap-3 mt-1.5 ml-4">
+                                {eclipse.magnitude > 0 && (
+                                    <div className="text-[10px] font-mono text-white/60">
+                                        <span className="text-white/30 mr-1">{ui?.eclipseMagnitude || 'MAG'}</span>
+                                        <span className="text-white/90">{eclipse.magnitude.toFixed(4)}</span>
+                                    </div>
+                                )}
+                                {eclipse.obscuration > 0 && (
+                                    <div className="text-[10px] font-mono text-white/60">
+                                        <span className="text-white/30 mr-1">{ui?.eclipseObscuration || 'OBS'}</span>
+                                        <span className="text-white/90">{eclipse.obscuration.toFixed(1)}%</span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        {eclipse.contacts?.maximum && (
+                            <div className="text-[10px] font-mono text-white/50 mt-1 ml-4">
+                                <span className="text-white/30 mr-1">{ui?.eclipseMaximum || 'MAX'}</span>
+                                <span className="text-white/80">{eclipse.contacts.maximum}</span>
+                            </div>
+                        )}
+                    </div>
+                );
+            })()}
             {until && ui && (
                 <div className="text-sm text-white/60 mt-1.5 italic font-medium">
                     {ui.untilPre} {until} {ui.untilPost}
@@ -2287,6 +2327,111 @@ export default function Panchaangam() {
                                     <div className="text-sm text-white/60 uppercase tracking-[0.15em] font-bold mt-1">{data.date}</div>
                                     <div className="text-sm text-yellow-500 font-mono uppercase tracking-widest font-black">{location.name}</div>
                                 </div>
+
+                                {/* ── Eclipse Alert Card (NASA/ISRO Grade) ── */}
+                                {data.eclipse && (() => {
+                                    const ecl = data.eclipse;
+                                    const isSolar = ecl.type === 'SOLAR';
+                                    const gradientFrom = isSolar ? 'from-amber-900/30' : 'from-red-900/30';
+                                    const gradientTo = isSolar ? 'to-amber-950/10' : 'to-red-950/10';
+                                    const borderColor = isSolar ? 'border-amber-500/40' : 'border-red-500/40';
+                                    const accentText = isSolar ? 'text-amber-400' : 'text-red-400';
+                                    const badgeBg = isSolar
+                                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-200'
+                                        : 'bg-red-500/20 border-red-500/50 text-red-200';
+                                    const icon = isSolar ? '🌑' : '🌕';
+
+                                    const formatDur = (sec) => {
+                                        if (!sec || sec <= 0) return null;
+                                        const m = Math.floor(sec / 60);
+                                        const s = Math.round(sec % 60);
+                                        if (m > 0) return `${m}m ${s}s`;
+                                        return `${s}s`;
+                                    };
+
+                                    // Build contact timeline entries
+                                    const timeline = [];
+                                    if (ecl.contacts) {
+                                        const c = ecl.contacts;
+                                        if (isSolar) {
+                                            if (c.firstContact) timeline.push({ label: 'C1 · ' + (ui.eclipseBegin || 'Begin'), time: c.firstContact });
+                                            if (c.secondContact) timeline.push({ label: 'C2 · ' + (ui.eclipseTotality || 'Totality') + ' ▸', time: c.secondContact });
+                                            if (c.maximum) timeline.push({ label: '● ' + (ui.eclipseMaximum || 'Maximum'), time: c.maximum, highlight: true });
+                                            if (c.thirdContact) timeline.push({ label: 'C3 · ' + (ui.eclipseTotality || 'Totality') + ' ◂', time: c.thirdContact });
+                                            if (c.fourthContact) timeline.push({ label: 'C4 · ' + (ui.eclipseEnd || 'End'), time: c.fourthContact });
+                                        } else {
+                                            if (c.penumbralBegin) timeline.push({ label: 'P1 · Penumbral ▸', time: c.penumbralBegin });
+                                            if (c.partialBegin) timeline.push({ label: 'U1 · Partial ▸', time: c.partialBegin });
+                                            if (c.totalityBegin) timeline.push({ label: 'U2 · ' + (ui.eclipseTotality || 'Totality') + ' ▸', time: c.totalityBegin });
+                                            if (c.maximum) timeline.push({ label: '● ' + (ui.eclipseMaximum || 'Maximum'), time: c.maximum, highlight: true });
+                                            if (c.totalityEnd) timeline.push({ label: 'U3 · ' + (ui.eclipseTotality || 'Totality') + ' ◂', time: c.totalityEnd });
+                                            if (c.partialEnd) timeline.push({ label: 'U4 · Partial ◂', time: c.partialEnd });
+                                            if (c.penumbralEnd) timeline.push({ label: 'P4 · Penumbral ◂', time: c.penumbralEnd });
+                                        }
+                                    }
+
+                                    return (
+                                        <div className={`col-span-2 rounded-2xl border ${borderColor} bg-gradient-to-br ${gradientFrom} ${gradientTo} backdrop-blur-xl p-4 font-mono overflow-hidden relative`}>
+                                            {/* Animated glow border effect */}
+                                            <div className={`absolute inset-0 rounded-2xl opacity-20 pointer-events-none`} style={{
+                                                boxShadow: isSolar
+                                                    ? '0 0 30px rgba(245,158,11,0.3), inset 0 0 30px rgba(245,158,11,0.1)'
+                                                    : '0 0 30px rgba(239,68,68,0.3), inset 0 0 30px rgba(239,68,68,0.1)',
+                                                animation: 'pulse 3s cubic-bezier(0.4,0,0.6,1) infinite'
+                                            }} />
+
+                                            {/* Header */}
+                                            <div className="flex items-center justify-between mb-3 relative">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xl">{icon}</span>
+                                                    <div>
+                                                        <div className={`text-sm font-black uppercase tracking-[0.15em] ${accentText}`}>{ecl.name}</div>
+                                                        <div className="text-[10px] text-white/40 uppercase tracking-widest">{ui.eclipseGrahana || 'Grahana'}</div>
+                                                    </div>
+                                                </div>
+                                                <span className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${badgeBg}`}>
+                                                    {ecl.classification || 'Unknown'}
+                                                </span>
+                                            </div>
+
+                                            {/* Stats Row */}
+                                            <div className="grid grid-cols-3 gap-2 mb-3">
+                                                {ecl.magnitude > 0 && (
+                                                    <div className="bg-white/5 rounded-lg p-2 text-center">
+                                                        <div className="text-[9px] text-white/30 uppercase tracking-widest mb-0.5">{ui.eclipseMagnitude || 'Magnitude'}</div>
+                                                        <div className="text-sm text-white font-bold">{ecl.magnitude.toFixed(4)}</div>
+                                                    </div>
+                                                )}
+                                                {ecl.obscuration > 0 && (
+                                                    <div className="bg-white/5 rounded-lg p-2 text-center">
+                                                        <div className="text-[9px] text-white/30 uppercase tracking-widest mb-0.5">{ui.eclipseObscuration || 'Obscuration'}</div>
+                                                        <div className="text-sm text-white font-bold">{ecl.obscuration.toFixed(1)}%</div>
+                                                    </div>
+                                                )}
+                                                {(ecl.totalityDuration || ecl.overallDuration) && (
+                                                    <div className="bg-white/5 rounded-lg p-2 text-center">
+                                                        <div className="text-[9px] text-white/30 uppercase tracking-widest mb-0.5">{ui.eclipseDuration || 'Duration'}</div>
+                                                        <div className="text-sm text-white font-bold">
+                                                            {ecl.totalityDuration ? formatDur(ecl.totalityDuration) : (ecl.overallDuration ? `${Math.round(ecl.overallDuration)}m` : '—')}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Contact Timeline */}
+                                            {timeline.length > 0 && (
+                                                <div className="border-t border-white/5 pt-2.5 space-y-1">
+                                                    {timeline.map((entry, i) => (
+                                                        <div key={i} className={`flex justify-between text-[11px] ${entry.highlight ? 'text-white font-bold' : 'text-white/50'}`}>
+                                                            <span className={entry.highlight ? accentText : ''}>{entry.label}</span>
+                                                            <span className="font-mono text-white/80">{entry.time}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
 
                                 <div className="grid grid-cols-2 gap-2">
                                     <DataBox label={ui.samvathsaram} value={data.samvathsaram} ui={ui} color="text-yellow-500" help={ui.samvathsaramDesc} />
