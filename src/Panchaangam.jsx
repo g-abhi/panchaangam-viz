@@ -1653,7 +1653,7 @@ const HelpIcon = ({ text }) => (
     </Tooltip>
 );
 
-const DataBox = ({ label, value, until, color, help, ui, eclipse }) => (
+const DataBox = ({ label, value, until, color, help, ui }) => (
     <Card className="bg-white/5 border-2 border-white/5 hover:border-white/30 transition-all group/box font-mono overflow-hidden">
         <CardContent className="p-3">
             <div className="flex items-center justify-between mb-1.5">
@@ -1676,58 +1676,6 @@ const DataBox = ({ label, value, until, color, help, ui, eclipse }) => (
                 )}
             </div>
             <div className={`text-lg tracking-tight leading-none uppercase ${color}`}>{value}</div>
-            {/* Eclipse Note - High Visibility (NASA/ISRO Grade) */}
-            {eclipse && label === ui?.tithi && (() => {
-                const isSolar = eclipse.type === 'SOLAR';
-                const accentColor = isSolar ? 'amber' : 'red';
-                const bgClass = isSolar ? 'bg-amber-500/10 border-amber-500/30' : 'bg-red-500/10 border-red-500/30';
-                const dotClass = isSolar ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]';
-                const textClass = isSolar ? 'text-amber-400' : 'text-red-400';
-                const badgeBg = isSolar ? 'bg-amber-500/20 border-amber-500/40 text-amber-300' : 'bg-red-500/20 border-red-500/40 text-red-300';
-
-                return (
-                    <div className={`mt-2.5 p-2.5 ${bgClass} border rounded-lg`} style={{ animation: 'pulse 3s cubic-bezier(0.4,0,0.6,1) infinite' }}>
-                        <div className="flex items-center gap-2 mb-1.5">
-                            <div className={`w-2 h-2 rounded-full ${dotClass}`} />
-                            <span className={`text-[10px] ${textClass} font-bold uppercase tracking-[0.2em] leading-none`}>
-                                {isSolar ? '🌑' : '🌕'} {eclipse.name}
-                            </span>
-                            {eclipse.classification && (
-                                <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${badgeBg}`}>
-                                    {eclipse.classification}
-                                </span>
-                            )}
-                        </div>
-                        {eclipse.times && (
-                            <div className="text-[11px] text-white/90 font-mono tracking-tighter ml-4 border-l border-white/10 pl-2 py-0.5">
-                                {eclipse.times}
-                            </div>
-                        )}
-                        {(eclipse.magnitude > 0 || eclipse.obscuration > 0) && (
-                            <div className="flex gap-3 mt-1.5 ml-4">
-                                {eclipse.magnitude > 0 && (
-                                    <div className="text-[10px] font-mono text-white/60">
-                                        <span className="text-white/30 mr-1">{ui?.eclipseMagnitude || 'MAG'}</span>
-                                        <span className="text-white/90">{eclipse.magnitude.toFixed(4)}</span>
-                                    </div>
-                                )}
-                                {eclipse.obscuration > 0 && (
-                                    <div className="text-[10px] font-mono text-white/60">
-                                        <span className="text-white/30 mr-1">{ui?.eclipseObscuration || 'OBS'}</span>
-                                        <span className="text-white/90">{eclipse.obscuration.toFixed(1)}%</span>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                        {eclipse.contacts?.maximum && (
-                            <div className="text-[10px] font-mono text-white/50 mt-1 ml-4">
-                                <span className="text-white/30 mr-1">{ui?.eclipseMaximum || 'MAX'}</span>
-                                <span className="text-white/80">{eclipse.contacts.maximum}</span>
-                            </div>
-                        )}
-                    </div>
-                );
-            })()}
             {until && ui && (
                 <div className="text-sm text-white/60 mt-1.5 italic font-medium">
                     {ui.untilPre} {until} {ui.untilPost}
@@ -2436,12 +2384,34 @@ export default function Panchaangam() {
                                 <div className="grid grid-cols-2 gap-2">
                                     <DataBox label={ui.samvathsaram} value={data.samvathsaram} ui={ui} color="text-yellow-500" help={ui.samvathsaramDesc} />
                                     <DataBox label={ui.amanthaMasam} value={data.amantha} ui={ui} color="text-yellow-500" help={ui.amanthaMasamDesc} />
-                                    <DataBox label={ui.tithi} value={data.tithi} until={data.tithiUntil} ui={ui} eclipse={data.eclipse} color="text-yellow-500" help={ui.tithiDesc} />
+                                    <DataBox label={ui.tithi} value={data.tithi} until={data.tithiUntil} ui={ui} color="text-yellow-500" help={ui.tithiDesc} />
                                     <DataBox label={ui.nakshatra} value={data.nakshatra} until={data.nakshatraUntil} ui={ui} color="text-yellow-500" help={ui.nakshatraDesc} />
                                     <DataBox label={ui.varam} value={data.varam} ui={ui} color="text-yellow-500" help={ui.varamDesc} />
                                     <DataBox label={ui.souramanaMasam} value={data.soura} ui={ui} color="text-yellow-500" help={ui.rasiDesc} />
                                     <DataBox label={ui.yoga} value={data.yoga} until={data.yogaUntil} ui={ui} color="text-yellow-500" help={ui.yogaDesc} />
                                     <DataBox label={ui.karana} value={data.karana} until={data.karanaUntil} ui={ui} color="text-yellow-500" help={ui.karanaDesc} />
+                                </div>
+
+                                {/* Sunrise / Sunset Row */}
+                                <div className="grid grid-cols-2 gap-2">
+                                    <Card className="bg-white/5 border-2 border-white/5 hover:border-white/30 transition-all font-mono overflow-hidden">
+                                        <CardContent className="p-3">
+                                            <div className="flex items-center gap-2 mb-1.5">
+                                                <span className="text-base">🌅</span>
+                                                <div className="text-lg text-white/60 uppercase tracking-[0.15em] font-bold">{ui.sunrise}</div>
+                                            </div>
+                                            <div className="text-lg tracking-tight leading-none text-amber-400 font-mono">{data.sunrise || '---'}</div>
+                                        </CardContent>
+                                    </Card>
+                                    <Card className="bg-white/5 border-2 border-white/5 hover:border-white/30 transition-all font-mono overflow-hidden">
+                                        <CardContent className="p-3">
+                                            <div className="flex items-center gap-2 mb-1.5">
+                                                <span className="text-base">🌇</span>
+                                                <div className="text-lg text-white/60 uppercase tracking-[0.15em] font-bold">{ui.sunset}</div>
+                                            </div>
+                                            <div className="text-lg tracking-tight leading-none text-orange-400 font-mono">{data.sunset || '---'}</div>
+                                        </CardContent>
+                                    </Card>
                                 </div>
                             </div>
 
