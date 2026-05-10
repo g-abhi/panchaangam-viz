@@ -12,11 +12,74 @@
     rel="stylesheet">
   <title>Panchaangam — Astronomical Sandbox</title>
   <meta name="description" content="An interactive 3D astronomical visualization of the Hindu Panchaangam calendar system, featuring real-time planetary positions using Swiss Ephemeris." />
-  <script type="module" crossorigin src="/panchaangam-viz/assets/index-BWIgT8Ur.js"></script>
-  <link rel="stylesheet" crossorigin href="/panchaangam-viz/assets/index-P0A9sNzM.css">
+  <style>
+    /* Loading screen — shown until React mounts and removes it */
+    #loading-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      background: #0a0a0a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Inter', system-ui, sans-serif;
+      color: #fafafa;
+      transition: opacity 0.6s ease;
+    }
+    #loading-screen.fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .loader-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: #eab308;
+      margin-bottom: 0.5rem;
+    }
+    .loader-sub {
+      font-size: 0.75rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.4);
+      margin-bottom: 2rem;
+    }
+    .loader-ring {
+      width: 48px;
+      height: 48px;
+      border: 3px solid rgba(234,179,8,0.15);
+      border-top-color: #eab308;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    .loader-status {
+      margin-top: 1.5rem;
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.3);
+      font-family: monospace;
+      text-transform: uppercase;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+  <script type="module" crossorigin src="/panchaangam-viz/assets/index-Dv0e_9-T.js"></script>
+  <link rel="modulepreload" crossorigin href="/panchaangam-viz/assets/three-wWppOPlo.js">
+  <link rel="stylesheet" crossorigin href="/panchaangam-viz/assets/index-BLiv0jeG.css">
 </head>
 
 <body>
+  <!-- Loading screen visible immediately while JS/WASM downloads -->
+  <div id="loading-screen">
+    <div class="loader-title">Panchaangam</div>
+    <div class="loader-sub">Astronomical Sandbox</div>
+    <div class="loader-ring"></div>
+    <div class="loader-status">Loading ephemeris data…</div>
+  </div>
+
   <div id="root"></div>
 </body>
 
