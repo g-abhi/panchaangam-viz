@@ -4,7 +4,8 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Stars, Html, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import SwissEph from 'swisseph-wasm';
-import { City, State, Country } from 'country-state-city';
+// country-state-city is lazy-loaded on first search (saves ~8.7 MB from initial load)
+// import { City, State, Country } from 'country-state-city';
 import tzlookup from 'tz-lookup';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
@@ -918,14 +919,15 @@ function SolarSystem({ speed, paused, anchorJD, location, onUpdate, sweReady, ta
     const [nodePos, setNodePos] = useState({ rahu: 0, ketu: 0 });
 
     // Load textures
-    const earthMap = useTexture('/assets/earth_vibrant.png');
-    const sunMap = useTexture('/assets/sun_texture.png');
-    const moonMap = useTexture('/assets/moon_texture.png');
-    const mercuryMap = useTexture('/assets/mercury.png');
-    const venusMap = useTexture('/assets/venus.png');
-    const marsMap = useTexture('/assets/mars.png');
-    const jupiterMap = useTexture('/assets/jupiter.png');
-    const saturnMap = useTexture('/assets/saturn.png');
+    const base = import.meta.env.BASE_URL;
+    const earthMap = useTexture(`${base}assets/earth_vibrant.png`);
+    const sunMap = useTexture(`${base}assets/sun_texture.png`);
+    const moonMap = useTexture(`${base}assets/moon_texture.png`);
+    const mercuryMap = useTexture(`${base}assets/mercury.png`);
+    const venusMap = useTexture(`${base}assets/venus.png`);
+    const marsMap = useTexture(`${base}assets/mars.png`);
+    const jupiterMap = useTexture(`${base}assets/jupiter.png`);
+    const saturnMap = useTexture(`${base}assets/saturn.png`);
 
     const planetTextures = {
         2: mercuryMap,
@@ -1900,9 +1902,35 @@ export default function Panchaangam() {
         }
     }, [speed, isInputFocused]);
 
+    // Ref to cache the lazy-loaded country-state-city module
+    const geoModuleRef = useRef(null);
+    const [geoLoading, setGeoLoading] = useState(false);
+
     useEffect(() => {
-        try {
-            if (cityQuery.length > 2) {
+        if (cityQuery.length <= 2) {
+            setCityResults([]);
+            return;
+        }
+
+        let cancelled = false;
+
+        const doSearch = async () => {
+            try {
+                // Lazy-load country-state-city on first search
+                if (!geoModuleRef.current) {
+                    setGeoLoading(true);
+                    const mod = await import('country-state-city');
+                    geoModuleRef.current = {
+                        City: mod.City,
+                        State: mod.State,
+                        Country: mod.Country,
+                    };
+                    setGeoLoading(false);
+                }
+
+                if (cancelled) return;
+
+                const { City, State, Country } = geoModuleRef.current;
                 const query = cityQuery.toLowerCase();
                 const allCities = City.getAllCities();
                 const matches = [];
@@ -1920,14 +1948,18 @@ export default function Panchaangam() {
                         });
                     }
                 }
-                setCityResults(matches);
-            } else {
-                setCityResults([]);
+                if (!cancelled) setCityResults(matches);
+            } catch (e) {
+                console.error("City search error:", e);
+                if (!cancelled) {
+                    setCityResults([]);
+                    setGeoLoading(false);
+                }
             }
-        } catch (e) {
-            console.error("City search error:", e);
-            setCityResults([]);
-        }
+        };
+
+        doSearch();
+        return () => { cancelled = true; };
     }, [cityQuery]);
 
     const handleUseMyLocation = () => {
@@ -2239,6 +2271,13 @@ export default function Panchaangam() {
                                                     {isLocating ? ui.locating : ui.useLocation}
                                                 </button>
                                             </div>
+
+                                            {geoLoading && (
+                                                <div className="flex items-center gap-2 p-3 text-white/50 text-sm">
+                                                    <div className="w-4 h-4 border-2 border-yellow-500/30 border-t-yellow-500 rounded-full animate-spin" />
+                                                    Loading city database…
+                                                </div>
+                                            )}
 
                                             {cityResults.length > 0 && (
                                                 <div className="space-y-1 max-h-60 overflow-y-auto no-scrollbar pr-1">
