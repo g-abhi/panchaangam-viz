@@ -1099,8 +1099,12 @@ function SolarSystem({ speed, paused, anchorJD, location, onUpdate, sweReady, ta
         // 8. Rasi
         const rasi = RASIS[Math.floor(sun / 30)];
 
-        // 9. Varam (1-indexed for SwissEph)
-        const varamIdx = (swe.day_of_week(simJD) + 1) % 7;
+        // 9. Varam (day of week in observer's local timezone)
+        // swe.day_of_week uses UTC-based JD which gives wrong results
+        // for timezones ahead of UTC (e.g., IST midnight = previous UTC day)
+        const simDateUtc = fromJD(simJD);
+        const localDateStr = simDateUtc.toLocaleDateString('en-US', { timeZone: location.timezone });
+        const varamIdx = new Date(localDateStr).getDay();
         const varam = VARAMS[varamIdx];
 
         // 10. Location-based (Sunrise, Sunset, Lagnam)
@@ -2034,11 +2038,7 @@ export default function Panchaangam() {
                     <div className="h-full overflow-y-auto no-scrollbar scroll-smooth p-6 space-y-12 min-w-[680px] font-mono">
                         <div className="space-y-4 pb-10">
                             <div className="flex justify-between items-start">
-                                <a href="#/studio/ancient-india" className="text-white/30 hover:text-white transition-colors flex items-center group" title="Back">
-                                    <svg className="w-8 h-8 group-hover:-translate-x-2 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
-                                    </svg>
-                                </a>
+
                                 {/* Language Toggle */}
                                 <div className="flex bg-white/5 rounded-xl p-1.5 border border-white/10 shrink-0 font-mono">
                                     <button
